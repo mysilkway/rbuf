@@ -10,7 +10,10 @@ package rbuf
 // http://golang.org/pkg/io/#Reader for example) are
 // copyright 2010 The Go Authors.
 
-import "io"
+import (
+	"io"
+	"syscall"
+)
 
 // FixedSizeRingBuf:
 //
@@ -323,6 +326,42 @@ func (b *FixedSizeRingBuf) ReadFrom(r io.Reader) (n int64, err error) {
 			return n, e
 		}
 	}
+}
+
+// ReadFromRawConn avoids intermediate allocation and copies.
+// ReadFromRawConn() reads data from r. The return value n
+// is the number of bytes read. Any error except io.EOF encountered
+// during the read is also returned.
+func (b *FixedSizeRingBuf) ReadFromRawConn(r syscall.RawConn, block bool) (n int64, err error) {
+	writeCapacity := b.N - b.Readable
+	if writeCapacity <= 0 {
+		// we are all full
+		return n, nil
+	}
+	writeStart := (b.Beg + b.Readable) % b.N
+	upperLim := intMin(writeStart+writeCapacity, b.N)
+
+	var m int
+	e := r.Read(func(s uintptr) bool {
+		var operr error
+		m, operr = syscall.Read(int(s), b.A[b.Use][writeStart:upperLim])
+		if operr == syscall.EAGAIN {
+			return !block
+		}
+		// break Read if no data or data read
+		return m > 0
+	})
+	if m > 0 {
+		n += int64(m)
+		b.Readable += m
+	}
+	if e == io.EOF {
+		return n, nil
+	}
+	if e != nil {
+		return n, e
+	}
+	return n, nil
 }
 
 // Reset quickly forgets any data stored in the ring buffer. The
