@@ -356,10 +356,7 @@ func (b *FixedSizeRingBuf) ReadFromRawConn(r syscall.RawConn, block bool) (n int
 		n += int64(m)
 		b.Readable += m
 	}
-	if e == io.EOF {
-		return n, nil
-	}
-	if e != nil {
+	if e != nil && e != io.EOF {
 		return n, e
 	}
 	return n, nil
