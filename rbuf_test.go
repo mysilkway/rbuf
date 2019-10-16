@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"os"
 	"testing"
 
 	cv "github.com/glycerine/goconvey/convey"
@@ -124,6 +125,43 @@ func TestRingBufReadWrite(t *testing.T) {
 			bbread := bytes.NewBuffer(data[4:9])
 			n, err = b.ReadFrom(bbread) // wrap 4 bytes around to the front, 5 bytes total.
 
+			by := b.Bytes()
+			cv.So(by, cv.ShouldResemble, data[4:9]) // but still get them back continguous from the ping-pong buffering
+		})
+
+		cv.Convey("FixedSizeRingBuf::ReadFromRawConn() should work with wrapped data", func() {
+			b.Reset()
+			r, w, err := os.Pipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			defer w.Close()
+
+			// get rawConn
+			rconn, err := r.SyscallConn()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			n, err := b.ReadFromRawConn(rconn, false)
+			cv.So(n, cv.ShouldEqual, 0)
+			cv.So(err, cv.ShouldEqual, nil)
+
+			// write 4, then read 4 bytes
+			m, err := b.Write(data[0:4])
+			cv.So(m, cv.ShouldEqual, 4)
+			cv.So(err, cv.ShouldEqual, nil)
+
+			sink := make([]byte, 4)
+			k, err := b.Read(sink) // put b.beg at 4
+			cv.So(k, cv.ShouldEqual, 4)
+			cv.So(err, cv.ShouldEqual, nil)
+			cv.So(b.Readable, cv.ShouldEqual, 0)
+			cv.So(b.Beg, cv.ShouldEqual, 4)
+
+			_, err = w.Write(data[4:9])
+			n, err = b.ReadFromRawConn(rconn, true) // wrap 4 bytes around to the front, 5 bytes total.
 			by := b.Bytes()
 			cv.So(by, cv.ShouldResemble, data[4:9]) // but still get them back continguous from the ping-pong buffering
 		})
