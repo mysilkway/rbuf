@@ -332,8 +332,7 @@ func (b *FixedSizeRingBuf) ReadFrom(r io.Reader) (n int64, err error) {
 // ReadFromRawConn() reads data from r until EOF or error or until write capacity full. The return value n
 // is the number of bytes read. Any error except io.EOF encountered
 // during the read is also returned.
-// block is the flag that blocking the thread until data read when it does not read any data
-func (b *FixedSizeRingBuf) ReadFromRawConn(r syscall.RawConn, block bool) (n int64, err error) {
+func (b *FixedSizeRingBuf) ReadFromRawConn(r syscall.RawConn) (n int64, err error) {
 	writeCapacity := b.N - b.Readable
 	if writeCapacity <= 0 {
 		// we are all full
@@ -341,6 +340,7 @@ func (b *FixedSizeRingBuf) ReadFromRawConn(r syscall.RawConn, block bool) (n int
 	}
 
 	e := r.Read(func(s uintptr) bool {
+		// read until no data or buffer is full
 		for {
 			writeStart := (b.Beg + b.Readable) % b.N
 			upperLim := intMin(writeStart+writeCapacity, b.N)
@@ -349,10 +349,7 @@ func (b *FixedSizeRingBuf) ReadFromRawConn(r syscall.RawConn, block bool) (n int
 			// if no data
 			if operr == syscall.EAGAIN || m <= 0 {
 				// check read data before, if yes, break Read
-				if n > 0 {
-					return true
-				}
-				return !block
+				return true
 			}
 
 			n += int64(m)
