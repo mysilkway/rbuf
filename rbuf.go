@@ -303,7 +303,7 @@ func (b *FixedSizeRingBuf) WriteTo(w io.Writer) (n int64, err error) {
 }
 
 // ReadFrom avoids intermediate allocation and copies.
-// ReadFrom() reads data from r until EOF or error. The return value n
+// ReadFrom() reads data from r until EOF or error or no data read. The return value n
 // is the number of bytes read. Any error except io.EOF encountered
 // during the read is also returned.
 func (b *FixedSizeRingBuf) ReadFrom(r io.Reader) (n int64, err error) {
@@ -317,55 +317,16 @@ func (b *FixedSizeRingBuf) ReadFrom(r io.Reader) (n int64, err error) {
 		upperLim := intMin(writeStart+writeCapacity, b.N)
 
 		m, e := r.Read(b.A[b.Use][writeStart:upperLim])
-		n += int64(m)
-		b.Readable += m
-		if e == io.EOF {
-			return n, nil
-		}
 		if e != nil {
+			if e == io.EOF || e == syscall.EAGAIN {
+				return n, nil
+			}
 			return n, e
 		}
+
+		n += int64(m)
+		b.Readable += m
 	}
-}
-
-// ReadFromRawConn avoids intermediate allocation and copies.
-// ReadFromRawConn() reads data from r until EOF or error or until write capacity full. The return value n
-// is the number of bytes read. Any error except io.EOF encountered
-// during the read is also returned.
-func (b *FixedSizeRingBuf) ReadFromRawConn(r syscall.RawConn) (n int64, err error) {
-	writeCapacity := b.N - b.Readable
-	if writeCapacity <= 0 {
-		// we are all full
-		return n, nil
-	}
-
-	e := r.Read(func(s uintptr) bool {
-		// read until no data or buffer is full
-		for {
-			writeStart := (b.Beg + b.Readable) % b.N
-			upperLim := intMin(writeStart+writeCapacity, b.N)
-
-			m, operr := syscall.Read(int(s), b.A[b.Use][writeStart:upperLim])
-			// if no data
-			if operr == syscall.EAGAIN || m <= 0 {
-				// check read data before, if yes, break Read
-				return true
-			}
-
-			n += int64(m)
-			b.Readable += m
-
-			writeCapacity = b.N - b.Readable
-			if writeCapacity <= 0 {
-				// we are all full
-				return true
-			}
-		}
-	})
-	if e != nil && e != io.EOF {
-		return n, e
-	}
-	return n, nil
 }
 
 // Reset quickly forgets any data stored in the ring buffer. The

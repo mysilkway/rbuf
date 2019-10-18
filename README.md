@@ -1,6 +1,6 @@
 ## Fork Information
 This is a fork of the master branch of glycerine/rbuf.
-* Added ReadFromRawConn in FixedSizeRingBuf to read data from syscall.RawConn
+* Updated ReadFrom to read data until EOF or error or no data read
 
 rbuf: a circular ring buffer in Golang
 ====
